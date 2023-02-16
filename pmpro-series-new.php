@@ -149,12 +149,15 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
 		$results[] = array();
 	}
 	
-	// Get the number of days since the user joined.
-	$user_joined_date = date( 'Y-m-d H:i:s', strtotime( get_user_meta( $user_id, 'pmpro_signup_date', true ) ) );
-	$days_since_joining = floor( ( time() - strtotime( $user_joined_date ) ) / 86400 );
+	// Get the user's account creation date.
+	$user_info = get_userdata( $user_id );
+	$account_creation_date = $user_info->user_registered;
+	
+	// Get the number of days since the user's account was created.
+	$days_since_creation = floor( ( time() - strtotime( $account_creation_date ) ) / ( 60 * 60 * 24 ) );
 	
 	// Check if the user has access to the series.
-	$has_access = $days_since_joining <= 180 || pmpro_hasMembershipLevel( null, $user_id );
+	$has_access = $days_since_creation <= 180 || pmpro_hasMembershipLevel( null, $user_id );
 	
 	if ( $return_membership_levels ) {
 		return array( $has_access, $results[1] );
@@ -162,6 +165,7 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
 		return $has_access;
 	}
 }
+
 
 
 /**
