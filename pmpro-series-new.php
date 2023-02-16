@@ -112,11 +112,13 @@ function pmpros_the_content( $content ) {
 		if ( !function_exists( 'pmpro_has_membership_access' ) || pmpro_has_membership_access() ) {
 			$content .= '<div id="pmpro-series-' . absint( $post->ID ) . '" class="pmpro-series-post-list">';
 			$series   = new PMProSeries( $post->ID );
-			$member_days = intval( pmpro_getMemberDays() );
-			if ( $member_days >= $series->getLongestPostDelay( 'publish' ) ) {
+			$registration_date = pmpro_getMemberStartdate();
+			$days_since_registration = floor( ( strtotime( 'now' ) - strtotime( $registration_date ) ) / ( 60 * 60 * 24 ) ); // Calculate the number of days since registration.
+			$longest_post_delay = $series->getLongestPostDelay( 'publish' ); // Get the longest post delay for the series.
+			if ( $days_since_registration >= $longest_post_delay ) {
 				$content .= '<p class="pmpro_series_all_posts_available_text">' . __( 'All posts in this series are now available.', 'pmpro-series' ) . '</p>';
 			} else {
-				$content .= '<p class="pmpro_series_days_into_membership_text">' . sprintf( __( 'You are on day %d of your membership.', 'pmpro-series' ), $member_days ) . '</p>';
+				$content .= '<p class="pmpro_series_days_into_membership_text">' . sprintf( __( 'You are on day %d of your membership.', 'pmpro-series' ), $days_since_registration ) . '</p>';
 			}
 			$content .= $series->getPostList();
 			$content .= '</div> <!-- end pmpro-series -->';
@@ -129,6 +131,7 @@ function pmpros_the_content( $content ) {
 }
 add_filter( 'the_content', 'pmpros_the_content' );
 
+
 /**
  * Check if a user has access to a series.
  */
@@ -137,8 +140,15 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
 		// Remove our filter to avoid loops.
 		remove_filter( 'pmpro_has_membership_access_filter', 'pmpros_pmpro_has_membership_access_filter', 10, 4 );
 		
+		// Get the user registration date.
+		$registration_date = get_user_meta( $user_id, 'pmpro_registration_date', true );
+		$member_days = 0;
+		if ( $registration_date ) {
+			$member_days = round( ( time() - strtotime( $registration_date ) ) / ( 60 * 60 * 24 ) );
+		}
+
 		// Get results.
-		$results = pmpro_has_membership_access( $series_id, $user_id, true );
+		$results = pmpro_has_membership_access( $series_id, $user_id, true, $member_days );
 		
 		// Add the filter back.
 		add_filter( 'pmpro_has_membership_access_filter', 'pmpros_pmpro_has_membership_access_filter', 10, 4 );
@@ -152,58 +162,9 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
 	if ( $return_membership_levels ) {
 		return $results;
 	} else {
-		$user = get_userdata($user_id);
-		$registration_date = get_user_meta( $user_id, 'pmpro_approval_date', true ); // Change 'pmpro_approval_date' to the appropriate meta key for your site
-
-		if ( empty( $registration_date ) ) {
-			$days_since_join = null;
-		} else {
-			$days_since_join = round((time() - strtotime($registration_date)) / DAY_IN_SECONDS);
-		}
-
-		$has_access = $days_since_join <= 180 || pmpro_hasMembershipLevel( null, $user_id );
-
-		if ( ! $has_access ) {
-			return false;
-		}
-
-		$registration_date_text = ! empty( $registration_date ) ? date( get_option( 'date_format' ), strtotime( $registration_date ) ) : 'N/A';
-
-		// If the user does have access to the series
-		$series_text = '';
-
-		if ( ! empty( $series_id ) ) {
-			$series = get_post( $series_id );
-			$series_title = $series->post_title;
-			$series_permalink = get_permalink( $series_id );
-			$series_text = sprintf( '<a href="%s">%s</a>', $series_permalink, $series_title );
-		}
-
-		if ( ! empty( $days_since_join ) && $days_since_join < 180 ) {
-			// If the user has joined within the last 180 days
-			$days_left = 180 - $days_since_join;
-			$message = sprintf(
-				__( 'You joined on %s and have access to this series for the next %d days.', 'pmpro-series' ),
-				$registration_date_text,
-				$days_left
-			);
-
-			if ( ! empty( $series_text ) ) {
-				$message .= sprintf( ' ' . __( 'Please visit %s to start the series or continue where you left off.', 'pmpro-series' ), $series_text );
-			}
-
-			return $message;
-		} elseif ( pmpro_hasMembershipLevel( null, $user_id ) ) {
-			// If the user has an active membership level
-			return true;
-		} else {
-			// If the user joined more than 180 days ago but does not have an active membership level
-			$message = __( 'Sorry, you do not have access to this content.', 'pmpro-series' );
-			return $message;
-		}
+		return $results[0];
 	}
 }
-
 
 /**
  * [pmpros_hasAccess] Makes sure people can't view content they don't have access to. This function returns true if a user has access to a page, including logic for series/delays.
@@ -213,6 +174,8 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
  * @return [type]
  */
 function pmpros_hasAccess( $user_id, $post_id ) {
+	$access_levels = apply_filters( 'pmpros_access_levels', array(), $user_id, $post_id );
+	
 	// is this post in a series?
 	$post_series = pmpros_getPostSeries( $post_id );
 	if ( empty( $post_series ) ) {
@@ -220,12 +183,12 @@ function pmpros_hasAccess( $user_id, $post_id ) {
 	}
 	
 	// does this user have a level giving them access to everything?
-	$all_access_levels = apply_filters( 'pmproap_all_access_levels', array(), $user_id, $post_id );
-	if ( ! empty( $all_access_levels )
-	&& function_exists( 'pmpro_hasMembershipLevel' )
-	&& pmpro_hasMembershipLevel( $all_access_levels, $user_id ) ) {
-		return true;    // user has one of the all access levels
-	}
+	$access_levels = apply_filters( 'pmpros_access_levels', array(), $user_id, $series_id );
+	if ( ! empty( $access_levels ) 
+	&& function_exists( 'pmpro_hasMembershipLevel' ) 
+	&& pmpro_hasMembershipLevel( $access_levels, $user_id ) ) {
+    $hasaccess = true; // user has one of the access levels
+}
 
 	// check each series
 	foreach ( $post_series as $series_id ) {
@@ -284,7 +247,17 @@ function pmpros_pmpro_has_membership_access_filter( $hasaccess, $post, $user, $p
 		if ( pmpros_hasAccess( $user->ID, $post->ID ) ) {
 			$hasaccess = true;
 		} else {
+			// user doesn't have access to this post, check if they have access to a series that this post belongs to
 			$hasaccess = false;
+			$post_series = pmpros_getPostSeries( $post->ID );
+			if ( !empty( $post_series ) ) {
+				foreach ( $post_series as $series_id ) {
+					if ( pmpros_hasAccessToSeries( $series_id, $user->ID ) ) {
+						$hasaccess = true;
+						break;
+					}
+				}
+			}
 		}
 	}
 
@@ -298,7 +271,7 @@ add_filter( 'pmpro_has_membership_access_filter', 'pmpros_pmpro_has_membership_a
  * NOTE: When getting/setting the _post_series post meta, use get_post_meta
  * 		 to get the value directly.
  */
-function pmpros_getPostSeries( $post_id = NULL ) {
+function pmpros_getPostSeries( $post_id = null ) {
 	// Default to the global post.
 	if ( empty( $post_id ) ) {
 		global $post;
@@ -348,11 +321,13 @@ function pmpros_getPostSeries( $post_id = NULL ) {
 	}
 
 	if ( ! empty( $deleted_post_series ) ) {
-		update_post_meta( $post_id, '_post_series', array_diff( $post_series, $deleted_post_series ) );
+		$post_series = array_diff( $post_series, $deleted_post_series );
+		update_post_meta( $post_id, '_post_series', $post_series );
 	}
 
 	return $new_post_series;
 }
+
 
 /**
  * [pmpros_pmpro_text_filter] Filter the message for users without access.
@@ -381,14 +356,14 @@ function pmpros_pmpro_text_filter( $text ) {
 				$series = new PMProSeries( $inseries );
 				$day    = $series->getDelayForPost( $post->ID );
 
-				$member_days = pmpro_getMemberDays( $current_user->ID );
-				$days_left   = ceil( $day - $member_days );
+				$registration_date = get_user_meta( $current_user->ID, 'pmpro_registration_date', true );
+				$days_left   = ceil( $day - ( time() - strtotime( $registration_date ) ) / DAY_IN_SECONDS );
 				$series_date_text        = date_i18n( get_option( 'date_format' ), strtotime( "+ $days_left Days", current_time( 'timestamp' ) ) );
 
 				$series_link_text = '<a href="' . get_permalink( $inseries ) . '">' . get_the_title( $inseries ) . '</a>';
 				$text = sprintf( __( 'This content is part of the %s series. You will gain access on %s.', 'pmpro-series' ),  $series_link_text, $series_date_text );
 
-				$text = apply_filters( 'pmpros_days_left_message', $text, $member_days, $days_left, $current_user->ID );
+				$text = apply_filters( 'pmpros_days_left_message', $text, $registration_date, $days_left, $current_user->ID );
 			} else {
 				// user has to sign up for one of the series
 				if ( count( $post_series ) == 1 ) {
@@ -419,13 +394,22 @@ add_filter( 'pmpro_not_logged_in_text_filter', 'pmpros_pmpro_text_filter' );
 /*
 	Couple functions from PMPro in case we don't have them yet.
 */
-if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
+if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) 
 	/**
 	 * [pmpro_getMemberStartdate] Get a member's start date... either in general or for a specific level_id.
 	 *
 	 * @param  [type]  $user_id
 	 * @param  integer $level_id
 	 * @return [type]
+	 */
+	if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
+	/**
+	 * Get a member's start date... either in general or for a specific level_id.
+	 *
+	 * @param int|null $user_id
+	 * @param int $level_id
+	 *
+	 * @return string|null
 	 */
 	function pmpro_getMemberStartdate( $user_id = null, $level_id = 0 ) {
 		if ( empty( $user_id ) ) {
@@ -439,10 +423,11 @@ if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
 
 			if ( ! empty( $level_id ) ) {
 				$sqlQuery = "SELECT UNIX_TIMESTAMP(CONVERT_TZ(startdate, '+00:00', @@global.time_zone)) FROM $wpdb->pmpro_memberships_users WHERE status = 'active' AND membership_id IN(" . $wpdb->escape( $level_id ) . ") AND user_id = '" . $user_id . "' ORDER BY id LIMIT 1";
-			} elseif( !empty( $wpdb->pmpro_memberships_users) ) {
-				$sqlQuery = "SELECT UNIX_TIMESTAMP(CONVERT_TZ(startdate, '+00:00', @@global.time_zone)) FROM $wpdb->pmpro_memberships_users WHERE status = 'active' AND user_id = '" . $user_id . "' ORDER BY id LIMIT 1";
-			} else {
+			} elseif ( ! empty( $wpdb->pmpro_memberships_users ) ) {
+				// If user has never been a member, get their registration date instead
 				$sqlQuery = "SELECT UNIX_TIMESTAMP(CONVERT_TZ(user_registered, '+00:00', @@global.time_zone)) FROM $wpdb->users WHERE ID = '" . esc_sql( $user_id ) . "' LIMIT 1";
+			} else {
+				$sqlQuery = "SELECT UNIX_TIMESTAMP(CONVERT_TZ(startdate, '+00:00', @@global.time_zone)) FROM $wpdb->pmpro_memberships_users WHERE status = 'active' AND user_id = '" . $user_id . "' ORDER BY id LIMIT 1";
 			}
 
 			$startdate = apply_filters( 'pmpro_member_startdate', $wpdb->get_var( $sqlQuery ), $user_id, $level_id );
@@ -452,13 +437,17 @@ if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
 
 		return $pmpro_startdates[ $user_id ][ $level_id ];
 	}
+}
 
+
+if ( ! function_exists( 'pmpro_getMemberDays' ) ) {
 	/**
-	 * [pmpro_getMemberDays description]
+	 * Get the number of days a member has been registered.
 	 *
-	 * @param  [type]  $user_id
-	 * @param  integer $level_id
-	 * @return [type]
+	 * @param int|null $user_id The user ID.
+	 * @param int      $level_id The membership level ID.
+	 *
+	 * @return int The number of days the member has been registered.
 	 */
 	function pmpro_getMemberDays( $user_id = null, $level_id = 0 ) {
 		if ( empty( $user_id ) ) {
@@ -475,7 +464,7 @@ if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
 				$pmpro_member_days[ $user_id ][ $level_id ] = 0;
 			} else {
 				$now  = current_time( 'timestamp' );
-				$days = ( $now - $startdate ) / 3600 / 24;
+				$days = ( $now - strtotime( get_user_by( 'ID', $user_id )->user_registered ) ) / 3600 / 24;
 
 				$pmpro_member_days[ $user_id ][ $level_id ] = $days;
 			}
@@ -485,10 +474,7 @@ if ( ! function_exists( 'pmpro_getMemberStartdate' ) ) {
 	}
 }
 
-/*
-	We need to flush rewrite rules on activation/etc for the CPTs.
-	Register/unregister crons on activation/deactivation.
-*/
+
 /**
  * [pmpros_activation description]
  *
@@ -503,6 +489,12 @@ function pmpros_activation() {
 	wp_schedule_event( current_time( 'timestamp' ), 'daily', 'pmpros_check_for_new_content' );
 }
 register_activation_hook( __FILE__, 'pmpros_activation' );
+
+/**
+ * [pmpros_deactivation description]
+ *
+ * @return [type]
+ */
 function pmpros_deactivation() {
 	// flush rewrite rules
 	global $pmpros_deactivating;
@@ -510,7 +502,7 @@ function pmpros_deactivation() {
 	flush_rewrite_rules();
 
 	// remove cron
-	wp_clear_scheduled_hook( current_time( 'timestamp' ), 'daily', 'pmpros_check_for_new_content' );
+	wp_clear_scheduled_hook( 'pmpros_check_for_new_content' );
 }
 register_deactivation_hook( __FILE__, 'pmpros_deactivation' );
 
@@ -615,4 +607,3 @@ function pmpros_plugin_row_meta( $links, $file ) {
 	return $links;
 }
 add_filter( 'plugin_row_meta', 'pmpros_plugin_row_meta', 10, 2 );
-
