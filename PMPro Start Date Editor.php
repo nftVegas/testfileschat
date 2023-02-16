@@ -56,6 +56,10 @@ function pmpro_start_date_viewer_page() {
 
 // This will add a new "Edit" link to each row in the table
 echo '<td><a href="?page=pmpro-start-date-editor&action=edit&user_id=' . $user_id . '">Edit</a></td>';
+if ( isset( $_GET['action'] ) && $_GET['action'] == 'edit' ) {
+    pmpro_start_date_editor_edit_form();
+}
+
 
 function pmpro_start_date_editor_edit_form() {
     if ( isset( $_GET['user_id'] ) ) {
