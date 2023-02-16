@@ -110,3 +110,11 @@ function pmpro_edit_start_date( $user_id ) {
     echo '<p><input type="submit" value="Update Start Date"></p>';
     echo '</form>';
 }
+
+function pmpro_sde_start_date_column_callback( $user ) {
+    $start_date = get_user_meta( $user->ID, 'pmpro_sde_start_date', true );
+    ?>
+    <label for="pmpro_sde_start_date_<?php echo $user->ID; ?>"><?php echo esc_html( $start_date ); ?></label>
+    <input type="text" id="pmpro_sde_start_date_<?php echo $user->ID; ?>" name="pmpro_sde_start_date_<?php echo $user->ID; ?>" value="<?php echo esc_attr( $start_date ); ?>" />
+    <?php
+}
