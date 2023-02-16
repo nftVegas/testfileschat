@@ -53,3 +53,28 @@ function pmpro_start_date_viewer_page() {
 	echo '</table>';
 	echo '</div>';
 }
+
+// This will add a new "Edit" link to each row in the table
+echo '<td><a href="?page=pmpro-start-date-editor&action=edit&user_id=' . $user_id . '">Edit</a></td>';
+
+function pmpro_start_date_editor_edit_form() {
+    if ( isset( $_GET['user_id'] ) ) {
+        $user_id = intval( $_GET['user_id'] );
+        $user_info = get_userdata( $user_id );
+        $start_date = get_user_meta( $user_id, 'pmpro_start_date', true );
+        
+        if ( ! empty( $start_date ) ) {
+            echo '<h2>Edit Start Date for ' . $user_info->user_login . '</h2>';
+            echo '<form method="post">';
+            echo '<input type="hidden" name="user_id" value="' . $user_id . '">';
+            echo '<label for="start_date">Start Date:</label>';
+            echo '<input type="date" name="start_date" id="start_date" value="' . $start_date . '">';
+            echo '<input type="submit" name="submit" value="Save" class="button-primary">';
+            echo '</form>';
+        } else {
+            echo '<p>Start date not found for user.</p>';
+        }
+    } else {
+        echo '<p>No user selected.</p>';
+    }
+}
