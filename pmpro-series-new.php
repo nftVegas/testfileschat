@@ -153,16 +153,54 @@ function pmpros_hasAccessToSeries( $series_id, $user_id, $return_membership_leve
 		return $results;
 	} else {
 		$user = get_userdata($user_id);
-		$days_since_join = round((time() - strtotime($user->user_registered)) / DAY_IN_SECONDS);
-		$days_since_access = pmpros_getDaysSinceLastAccess( $user_id );
-		$has_access = $days_since_join <= 180 || $days_since_access <= 180 || pmpro_hasMembershipLevel( null, $user_id );
-		
-		// Check for access to series based on new criteria
-		if ( !pmpros_hasAccessToSeries( $series_id, $user_id ) ) {
-			$has_access = false;
+		$registration_date = get_user_meta( $user_id, 'pmpro_approval_date', true ); // Change 'pmpro_approval_date' to the appropriate meta key for your site
+
+		if ( empty( $registration_date ) ) {
+			$days_since_join = null;
+		} else {
+			$days_since_join = round((time() - strtotime($registration_date)) / DAY_IN_SECONDS);
 		}
-		
-		return $has_access;
+
+		$has_access = $days_since_join <= 180 || pmpro_hasMembershipLevel( null, $user_id );
+
+		if ( ! $has_access ) {
+			return false;
+		}
+
+		$registration_date_text = ! empty( $registration_date ) ? date( get_option( 'date_format' ), strtotime( $registration_date ) ) : 'N/A';
+
+		// If the user does have access to the series
+		$series_text = '';
+
+		if ( ! empty( $series_id ) ) {
+			$series = get_post( $series_id );
+			$series_title = $series->post_title;
+			$series_permalink = get_permalink( $series_id );
+			$series_text = sprintf( '<a href="%s">%s</a>', $series_permalink, $series_title );
+		}
+
+		if ( ! empty( $days_since_join ) && $days_since_join < 180 ) {
+			// If the user has joined within the last 180 days
+			$days_left = 180 - $days_since_join;
+			$message = sprintf(
+				__( 'You joined on %s and have access to this series for the next %d days.', 'pmpro-series' ),
+				$registration_date_text,
+				$days_left
+			);
+
+			if ( ! empty( $series_text ) ) {
+				$message .= sprintf( ' ' . __( 'Please visit %s to start the series or continue where you left off.', 'pmpro-series' ), $series_text );
+			}
+
+			return $message;
+		} elseif ( pmpro_hasMembershipLevel( null, $user_id ) ) {
+			// If the user has an active membership level
+			return true;
+		} else {
+			// If the user joined more than 180 days ago but does not have an active membership level
+			$message = __( 'Sorry, you do not have access to this content.', 'pmpro-series' );
+			return $message;
+		}
 	}
 }
 
@@ -577,28 +615,4 @@ function pmpros_plugin_row_meta( $links, $file ) {
 	return $links;
 }
 add_filter( 'plugin_row_meta', 'pmpros_plugin_row_meta', 10, 2 );
-
-//new code
-/**
- * Return the number of days since the user last accessed a post in the series.
- *
- * @param int $user_id The user's ID.
- * @param int $post_id The post ID.
- *
- * @return int The number of days since the user last accessed a post in the series.
- */
-function pmpros_getDaysSinceLastAccess( $user_id, $post_id ) {
-    global $wpdb;
-
-    $access_id = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(id) FROM $wpdb->pmpro_membership_access_logs WHERE user_id = %d AND post_id = %d AND status = 'success'", $user_id, $post_id ) );
-    
-    if ( $access_id ) {
-        $start_date = $wpdb->get_var( $wpdb->prepare( "SELECT timestamp FROM $wpdb->pmpro_membership_access_logs WHERE id = %d", $access_id ) );
-        $days = empty( $start_date ) ? 0 : floor( ( time() - strtotime( $start_date ) ) / DAY_IN_SECONDS );
-    } else {
-        $days = pmpros_getDaysSinceRegistration( $user_id );
-    }
-
-    return $days;
-}
 
