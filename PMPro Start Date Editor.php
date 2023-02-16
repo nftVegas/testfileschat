@@ -82,3 +82,31 @@ function pmpro_start_date_editor_edit_form() {
         echo '<p>No user selected.</p>';
     }
 }
+
+function pmpro_edit_start_date( $user_id ) {
+    global $wpdb;
+    
+    if ( isset( $_POST['pmpro_edit_start_date_nonce'] ) && wp_verify_nonce( $_POST['pmpro_edit_start_date_nonce'], 'pmpro_edit_start_date_' . $user_id ) ) {
+        $new_start_date = sanitize_text_field( $_POST['pmpro_edit_start_date'] );
+        
+        // Update the start date in the database.
+        $wpdb->update(
+            $wpdb->pmpro_memberships_users,
+            array( 'startdate' => $new_start_date ),
+            array( 'user_id' => $user_id ),
+            array( '%s' ),
+            array( '%d' )
+        );
+        
+        echo '<div class="updated"><p>Start date updated successfully.</p></div>';
+    }
+    
+    $start_date = $wpdb->get_var( $wpdb->prepare( "SELECT startdate FROM $wpdb->pmpro_memberships_users WHERE user_id = %d", $user_id ) );
+    
+    echo '<h2>Edit Start Date for User ID ' . $user_id . '</h2>';
+    echo '<form method="post">';
+    wp_nonce_field( 'pmpro_edit_start_date_' . $user_id, 'pmpro_edit_start_date_nonce' );
+    echo '<p><label for="pmpro_edit_start_date">New Start Date:</label> <input type="text" id="pmpro_edit_start_date" name="pmpro_edit_start_date" value="' . esc_attr( $start_date ) . '"></p>';
+    echo '<p><input type="submit" value="Update Start Date"></p>';
+    echo '</form>';
+}
