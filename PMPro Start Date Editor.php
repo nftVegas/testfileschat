@@ -118,3 +118,37 @@ function pmpro_sde_start_date_column_callback( $user ) {
     <input type="text" id="pmpro_sde_start_date_<?php echo $user->ID; ?>" name="pmpro_sde_start_date_<?php echo $user->ID; ?>" value="<?php echo esc_attr( $start_date ); ?>" />
     <?php
 }
+
+function pmprosd_user_profile_fields($user) {
+    global $wpdb;
+    $user_id = $user->ID;
+    $table_name = $wpdb->prefix . "pmpro_memberships_users";
+    $start_date = $wpdb->get_var( "SELECT startdate FROM $table_name WHERE user_id = $user_id LIMIT 1" );
+    ?>
+    <h3><?php _e('Start Date Editor', 'pmprosd');?></h3>
+    <table class="form-table">
+        <tr>
+            <th><label for="pmpro_startdate"><?php _e('Start Date', 'pmprosd');?></label></th>
+            <td>
+                <input type="text" name="pmpro_startdate" id="pmpro_startdate" value="<?php echo esc_attr($start_date); ?>">
+                <p class="description"><?php _e('Enter the user\'s new start date.', 'pmprosd');?></p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+
+function pmprosd_user_profile_fields_save($user_id) {
+    if ( !current_user_can( 'edit_user', $user_id ) ) { return false; }
+    if ( isset( $_POST['pmpro_startdate'] ) ) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . "pmpro_memberships_users";
+        $new_start_date = sanitize_text_field($_POST['pmpro_startdate']);
+        $wpdb->update( $table_name, array( 'startdate' => $new_start_date ), array( 'user_id' => $user_id ) );
+    }
+}
+
+add_action( 'show_user_profile', 'pmprosd_user_profile_fields' );
+add_action( 'edit_user_profile', 'pmprosd_user_profile_fields' );
+add_action( 'personal_options_update', 'pmprosd_user_profile_fields_save' );
+add_action( 'edit_user_profile_update', 'pmprosd_user_profile_fields_save' );
