@@ -25,6 +25,22 @@ add_action( 'admin_menu', 'pmpro_start_date_viewer_menu' );
 function pmpro_start_date_viewer_page() {
 	global $wpdb;
 
+	if ( isset( $_POST['pmpro-start-date'] ) ) {
+		$user_id = (int) $_POST['user-id'];
+		$start_date = sanitize_text_field( $_POST['pmpro-start-date'] );
+
+		// Update the start date in the database.
+		$wpdb->update(
+			$wpdb->pmpro_memberships_users,
+			array( 'startdate' => $start_date ),
+			array( 'user_id' => $user_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		echo '<div class="notice notice-success"><p>Start date updated successfully!</p></div>';
+	}
+
 	// Get all users and their start dates from the database.
 	$results = $wpdb->get_results(
 		"
@@ -41,6 +57,7 @@ function pmpro_start_date_viewer_page() {
 	echo '<tr>';
 	echo '<th>User ID</th>';
 	echo '<th>Start Date</th>';
+	echo '<th>Edit Start Date</th>';
 	echo '</tr>';
 	echo '</thead>';
 	echo '<tbody>';
@@ -48,6 +65,13 @@ function pmpro_start_date_viewer_page() {
 		echo '<tr>';
 		echo '<td>' . $result->user_id . '</td>';
 		echo '<td>' . $result->startdate . '</td>';
+		echo '<td>';
+		echo '<form method="post">';
+		echo '<input type="hidden" name="user-id" value="' . $result->user_id . '">';
+		echo '<input type="text" name="pmpro-start-date" value="' . $result->startdate . '">';
+		echo '<input type="submit" class="button" value="Update">';
+		echo '</form>';
+		echo '</td>';
 		echo '</tr>';
 	}
 	echo '</tbody>';
